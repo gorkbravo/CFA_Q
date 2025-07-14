@@ -1,0 +1,16 @@
+# Python
+*.pyc
+__pycache__/
+venv/
+.venv/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Temporary files
+*.tmp
+*~
+temp_*.py
+
+# Data directories (often large and not version controlled)
+Data/
