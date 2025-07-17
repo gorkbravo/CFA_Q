@@ -20,9 +20,17 @@ This project does NOT aim to replace VaR models, but to create a lightweight cor
 
 The target outcome is to demonstrate that this approach improves margin performance (better risk coverage, reduced procyclicality) while being computationally feasible for real-time CCP operations.
 
-## To Do
+## Current State
 
-*   **Refine Options Data Cleaning:** Improve the options data cleaning methodology to ensure high-quality inputs for the volatility models.
-*   **Consolidate Data:** Create a script to merge the forward curve steepness data with the corresponding daily risk-neutral moments.
+*   **Data Pipeline:**
+    *   `futures_curve.py`: Processes raw futures data to calculate the Curve-Term-Structure Index (CTSI) and saves it to `Data/Stats/stats.csv`.
+    *   `hmm_engine.py`: Fits a 2-state Hidden Markov Model (HMM) to the CTSI time series and saves backwardation probabilities to `Data/Stats/stats_hmm.csv`.
+    *   `options_data_cleaner.py`: Cleans raw options data (now expecting `strike`, `mid`, `volume`, `open_int`, `type` columns) and saves it to `Data/Options_data/Cleaned`.
+*   **Volatility Engines:**
+    *   `vol_engine_v3.py`, `vol_engine_v4.py`, and `vol_engine_hybrid.py` have been updated to use the cleaned options data. These are the most promising engines for implied volatility surface fitting.
+
+## Next Steps / Work to Focus On
+
+*   **Consolidate Data:** Create a script to merge the forward curve steepness data (CTSI) with the corresponding daily risk-neutral moments (from the chosen volatility engine).
 *   **Model Correction Factor:** Perform a statistical analysis to model the relationship between forward curve steepness and the moments, and define the margin correction factor.
 *   **Simulation and Backtesting:** Create a simulation to demonstrate the factor's behavior and its potential to improve risk coverage.
