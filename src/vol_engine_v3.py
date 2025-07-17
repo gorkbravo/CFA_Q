@@ -69,6 +69,7 @@ def breeden_pdf(
     d2sig_dK2 = np.zeros_like(K)
 
     for i, Ki in enumerate(K):
+        if Ki <= 0: continue
         k = math.log(Ki / F)
         term2 = math.sqrt((nu/alpha * k + rho)**2 + (1 - rho**2))
         w = (alpha**2 / 2) * (1 + rho*(nu/alpha)*k + term2)
@@ -96,21 +97,13 @@ def breeden_pdf(
     ) * math.exp(RISK_FREE_RATE * T)
     return pdf
 
-# ───── slice filter ────────────────────────────────────────────────────────────
-def filter_slice(df: pd.DataFrame) -> pd.DataFrame:
-    df = normalise_columns(df)
-    df = df[df.type.str.startswith('c')]
-    df.loc[:, ['bid','ask']] = df[['bid','ask']].apply(pd.to_numeric, errors='coerce')
-    df = df[df.strike.astype(float) > 0]
-    mid = (df.bid + df.ask) / 2
-    ok = (df.bid > 0) & (df.ask > df.bid) & (((df.ask - df.bid) / (mid + 1e-12)) <= IV_WIDTH_CUTOFF)
-    return df[ok] if ok.sum()>=8 else df[df.bid>0]
-
-# ───── calibration (SVI–SABR β=1) with static-arb check ─────────────────────────
+# ───── calibration and bfly arb check ─────────────────────────
 def calibrate_svi_sabr(df: pd.DataFrame, F: float, T: float) -> Dict[str, float]:
-    # extract and filter strikes/vols
+    
     strikes = df.strike.astype(float).to_numpy()
-    vols    = df[df.columns[df.columns.str.startswith('impliedvol')][0]].astype(float).to_numpy()
+    # Use mid price as proxy for implied volatility. Needs proper IV calculation.
+    vols = df.mid.astype(float).to_numpy() / F # Placeholder: needs proper IV calculation
+
     mask = strikes > 0
     strikes = strikes[mask]
     vols = vols[mask]
@@ -125,21 +118,21 @@ def calibrate_svi_sabr(df: pd.DataFrame, F: float, T: float) -> Dict[str, float]
     alpha, nu, rho = res.x
     rmse = math.sqrt(res.fun)
 
-    # static arbitrage (butterfly) check with T
+    # stat arb check 
     cond1 = alpha * nu * T * (1 + abs(rho)) < 4
     cond2 = nu**2 * T * (1 + abs(rho))   < 4
     arb_free = cond1 and cond2
     warn_code = '' if (res.success and arb_free) else 'ARB_FAIL'
 
-    # tail extrapolation
+    
     K_min, K_max = strikes.min(), strikes.max()
     K_ext = np.linspace(K_min/EXTRAPOLATION_FACTOR, K_max*EXTRAPOLATION_FACTOR, EXT_GRID_SIZE)
 
-    # analytic breeden_pdf
+    
     pdf_vals = breeden_pdf(F, K_ext, T, alpha, nu, rho)
     mass = trapezoid(pdf_vals, K_ext)
 
-    # band coverage (unchanged)
+    
     band = np.nan
 
     return {
@@ -169,7 +162,7 @@ def process(opt_dir: Path, fut_dir: Path, expiry: str, out_csv: Path, show: bool
         dt = token(f.name)
         T = yearfrac(dt, expiry_dt)
         if T <= 0: continue
-        df = filter_slice(pd.read_csv(f))
+        df = pd.read_csv(f) # Read already cleaned data
         if df.empty: continue
         F = forward_price(fut_dir, dt, T)
         res = calibrate_svi_sabr(df, F, T)

@@ -61,16 +61,6 @@ def svi_sabr_vol(F: float, K: float, T: float, alpha: float, nu: float, rho: flo
     w = 0.5 * alpha*alpha * (term1 + term2)
     return math.sqrt(w / T)
 
-# ───── slice filter ────────────────────────────────────────────────────────────
-def filter_slice(df: pd.DataFrame) -> pd.DataFrame:
-    df = normalise_columns(df)
-    df = df[df.type.str.startswith('c')]
-    df[['bid','ask']] = df[['bid','ask']].apply(pd.to_numeric, errors='coerce')
-    df = df[df.strike.astype(float) > 0]
-    mid = (df.bid + df.ask)/2
-    ok  = (df.bid>0) & (df.ask>df.bid) & (((df.ask-df.bid)/(mid+1e-12)) <= IV_WIDTH_CUTOFF)
-    return df[ok] if ok.sum() >= 8 else df[df.bid>0]
-
 # ───── PDF mass via Breeden-Litzenberger ────────────────────────────────────────
 def compute_pdf_mass(F: float, T: float, alpha: float, nu: float, rho: float) -> float:
     def vol_fn(K): return svi_sabr_vol(F, K, T, alpha, nu, rho)
@@ -83,7 +73,9 @@ def compute_pdf_mass(F: float, T: float, alpha: float, nu: float, rho: float) ->
 # ───── SVI-SABR calibrator ─────────────────────────────────────────────────────
 def calibrate_svi_sabr(df: pd.DataFrame, F: float, T: float) -> Dict[str, float]:
     strikes = df.strike.astype(float).to_numpy()
-    vols    = df.impliedvolatility.astype(float).to_numpy()
+    # Use mid price as proxy for implied volatility. Needs proper IV calculation.
+    vols = df.mid.astype(float).to_numpy() / F # Placeholder: needs proper IV calculation
+
     def obj(x):
         sim = np.array([svi_sabr_vol(F, K, T, *x) for K in strikes])
         return float(np.mean((sim - vols)**2))
@@ -103,7 +95,7 @@ def process(opt_dir: Path, fut_dir: Path, expiry: str, out_csv: Path) -> None:
         date_tok = DATE_TOKEN_RE.search(f.name).group(0)
         T = (exp_dt - datetime.strptime(date_tok, '%m-%d-%Y')).days/365.0
         if T <= 0: continue
-        df_s = filter_slice(pd.read_csv(f))
+        df_s = pd.read_csv(f) # Read already cleaned data
         if df_s.empty: continue
         F = forward_price(Path(fut_dir), date_tok, T)
         rec = calibrate_svi_sabr(df_s, F, T)
