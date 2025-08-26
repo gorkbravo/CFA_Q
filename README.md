@@ -10,56 +10,107 @@ The goal is to develop a forward-looking IM framework that adjusts to predicted 
 
 The project follows a multi-step pipeline:
 
-1.  **SVI-SABR Model Calibration:** An enhanced Stochastic Volatility Inspired (SVI) model is calibrated to the options data for each trading day. This model is used to extract key features, including the ATM Implied Volatility, Forward Price (F), and Time to Expiry (T). The enhancements include a weighted MSE loss function, an arbitrage violation penalty, and a sequential parameter initialization scheme.
+1.  **SVI-SABR Model Calibration & Data Preparation:** An enhanced Stochastic Volatility Inspired (SVI) model is calibrated to the options data for each trading day. This process, along with the calculation of term structure and Hidden Markov Model (HMM) features, and subsequent feature engineering, culminates in a model-ready dataset (`Data_act/Final/model_ready_dataset.csv`).
 
-2.  **Feature Engineering & Data Consolidation:** The calibrated SVI-SABR parameters are combined with market regime probabilities from a Hidden Markov Model (HMM) to create a daily consolidated dataset (`Data/Stats/consolidated_data.csv`).
+2.  **Neural Network Training:** An MLP Regressor is trained to predict the log-ratio of the next day's ATM IV to the current day's ATM IV using the prepared dataset. The trained model (`models/nn_model.joblib`) and its feature scaler (`models/scaler.joblib`) are saved for inference.
 
-3.  **Neural Network Prediction:** An MLP Regressor is trained to predict the next day's ATM IV using the consolidated data. The trained model (`models/nn_model.joblib`) and its feature scaler (`models/scaler.joblib`) are saved for inference.
+3.  **IM Correction Factor Generation:** The trained Neural Network model is used to generate daily IM correction factors based on its predictions. These factors are stored in `results_testing/im_correction_factor.csv`.
 
-4.  **IM Correction Factor Calculation:** The trained NN model is used to generate daily IM correction factors, which are stored in `Data/Stats/im_correction_factor.csv`.
-
-5.  **Backtesting:** A backtest is performed to compare the performance of the dynamic IM model against a static baseline model, evaluating its effectiveness in different market scenarios.
+4.  **Backtesting:** A backtest is performed to compare the performance of the dynamic IM model against a static baseline model. The backtest evaluates effectiveness based on metrics such as margin breaches, average margin size, and procyclicality.
 
 ## Project Structure
 
 ```
 CFA_Quant_Awards/
 │
-├── Data/                  # Raw and processed data
-├── src/                   # Source code for the pipeline
-│   ├── SVI_SABR_engine.py       # SVI-SABR model calibration
-│   ├── data_consolidator.py   # Feature engineering and aggregation
-│   ├── NN_engine.py           # Neural network training
-│   ├── IM_engine.py           # IM correction factor calculation
-│   └── backtest_engine.py     # Backtesting and performance analysis
+├── Data_act/              # Raw and processed data (Futures, Options, OVX, SOFR)
+│   └── Final/
+│       └── model_ready_dataset.csv # Consolidated dataset for modeling
 │
-├── models/                # Saved trained models
+├── src/                   # Source code for the pipeline components
+│   ├── SVI_SABR_engine.py # SVI-SABR model calibration and related calculations
+│   ├── build_dataset.py   # Orchestrates data preparation, SVI, HMM, and feature engineering
+│   ├── data_handlers.py   # Handles data loading and initial processing
+│   ├── feature_engine.py  # Generates time-series features
+│   ├── futures_curve.py   # Futures curve related calculations
+│   ├── hmm_engine.py      # Hidden Markov Model calculations
+│   ├── IM_engine.py       # Generates IM correction factors using the NN model
+│   ├── NN_engine.py       # Neural network training and hyperparameter tuning
+│   └── backtest_engine.py # Backtesting and performance analysis
+│
+├── models/                # Saved trained models and scalers
 │   ├── nn_model.joblib
 │   └── scaler.joblib
 │
-├── results_testing/       # Quantitative results and analysis
-├── fit_visuals/           # Visualizations of model fits
+├── results_testing/       # Quantitative results and analysis outputs
+│   ├── daily_svi_analysis.csv # Output from SVI-SABR engine
+│   ├── feature_importance.png # Example visualization
+│   └── im_correction_factor.csv # Output from IM engine
 │
-├── run.py                 # Main execution script for the pipeline
-├── analyze_fits.py        # Script for analyzing SVI-SABR fit quality
+├── Other/                 # Miscellaneous analysis and visualization scripts
+│   ├── analyze_fits.py
+│   ├── generate_fit_visuals.py
+│   └── visualize_parameters.py
+│
 ├── Data_Requirements.md   # Document detailing data needs for a full implementation
-└── README.md              # This file
+├── NN_IM_Proposal.md      # Proposal document for the Neural Network IM approach
+├── PROJECT_BRIEF.md       # High-level project brief
+├── README.md              # This file
+└── test_pipeline.py       # Unit tests for data handling and feature calculation
 ```
 
-## How to Run
+## How to Run the Pipeline
 
-The entire pipeline can be executed by running the main script from the project root directory:
+To run the full pipeline and generate the backtest results, execute the following Python scripts in sequence from the project root directory:
 
-```bash
-python run.py
+1.  **Prepare the Dataset:**
+    ```bash
+    python src/build_dataset.py
+    ```
+    This script orchestrates the SVI-SABR engine, HMM, and feature engineering to create `Data_act/Final/model_ready_dataset.csv`.
+
+2.  **Generate IM Correction Factors:**
+    ```bash
+    python src/IM_engine.py
+    ```
+    This script loads the trained Neural Network model, makes predictions on the prepared dataset, and generates `results_testing/im_correction_factor.csv`.
+    *(Note: Ensure `models/nn_model.joblib` and `models/scaler.joblib` exist. If not, run `python src/NN_engine.py` first to train the model.)*
+
+3.  **Run the Backtest:**
+    ```bash
+    python src/backtest_engine.py
+    ```
+    This script performs the backtest using the generated IM correction factors and prints the summary results to the console.
+
+## Current Status & Backtest Results (as of last run)
+
+The baseline VaR model is currently configured as a **10-day simple historical VaR**.
+
+Here are the latest backtesting summary results:
+
 ```
+--- Backtesting Summary (99% Historical VaR Baseline) ---
+Data points: 286
+Date Range: 2024-07-05 to 2025-08-22
 
-This will execute the following modules in sequence:
-1.  `SVI_SABR_engine.py`
-2.  `data_consolidator.py`
-3.  `NN_engine.py`
-4.  `IM_engine.py`
-5.  `backtest_engine.py`
+
+Margin Breaches:
+  - Baseline Model (Hist. VaR): 49 (17.13%)
+  - Dynamic Model:              49 (17.13%)
+
+
+Average Margin Size (% of Price):
+  - Baseline Model (Hist. VaR): 2.50%
+  - Dynamic Model:              2.49%
+  - Change:                     -0.21%
+
+
+Margin Procyclicality (Std Dev of Daily Margin/Price Ratio Changes):
+  - Baseline Model (Hist. VaR): 0.0066
+  - Dynamic Model:              0.0067
+  - Change:                     2.32%
+----------------------------------------------------------
+```
 
 ## Data Requirements
 
