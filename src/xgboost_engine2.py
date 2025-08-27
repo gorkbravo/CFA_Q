@@ -31,7 +31,7 @@ def custom_gamma_objective(y_pred, dtrain):
     hess_extreme[mask_lower] = 2 * np.ones_like(y_pred[mask_lower])
 
     # New: Penalty for higher im_correction_factor values
-    penalty_coeff = 0.02 # Fixing the penalty coefficient as optimal
+    penalty_coeff = 0.05 # Fixing the penalty coefficient as optimal
     grad_avg_margin = penalty_coeff * np.ones_like(y_pred)
     hess_avg_margin = np.zeros_like(y_pred)
 
@@ -102,7 +102,9 @@ def main():
         'T', 'rho', 'implied_kurtosis', 'r', 'implied_kurtosis_lag_1', 'implied_skew',
         # New enhanced features
         'vol_regime_high', 'vol_regime_low', 'skew_kurt_interaction', 'vol_momentum',
-        'term_structure_interaction', 'rho_vol_interaction', 'iv_vol_ratio', 'skew_level'
+        'term_structure_interaction', 'rho_vol_interaction', 'iv_vol_ratio', 'skew_level',
+        # OVX features
+        'OVX_Close_ma_2', 'OVX_Close_mom_1'
     ]
 
     # Ensure all features and target are non-NaN before splitting
@@ -173,6 +175,10 @@ def main():
 
     print("\nTop 10 Most Important Features for Gamma:")
     print(feature_importance.head(10))
+
+    # --- Save Feature Importance --- #
+    feature_importance.to_csv(RESULTS_DIR / "feature_importance.csv", index=False)
+    print("\nFeature importance data saved to C:\\Users\\User\\Desktop\\Me\\Coding Projects\\CFA_Quant_Awards\\results_testing\\feature_importance.csv")
 
     # Save results
     df_results = df.copy()

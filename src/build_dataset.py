@@ -63,9 +63,10 @@ def main():
 
     print(f"Term Structure and HMM features calculated. Shape: {df_ts.shape}")
 
-    # --- Step 3: Merge SVI data with other features --- #
+    # --- Step 3: Merge SVI, Term Structure, and OVX Data --- #
     print("\n--- Merging Data Sources ---")
-    df_merged = df_svi.join(df_ts, how='inner')
+    df_ovx = data_handlers.get_ovx_data()
+    df_merged = df_svi.join(df_ts, how='inner').join(df_ovx, how='inner')
     
     # Drop the problematic, non-numeric column before feature engineering
     df_merged = df_merged.drop(columns=['warn_code'], errors='ignore')
@@ -74,7 +75,8 @@ def main():
     # --- Step 4: Generate Time-Series Features --- #
     print("\n--- Generating Time-Series Features ---")
     # Using reduced complexity features for the limited dataset
-    df_final = feature_engine.generate_timeseries_features(df_merged)
+    df_final = feature_engine.generate_timeseries_features(df_merged.drop(columns=['state', 'hmm_prob']))
+    df_final['hmm_regime'] = df_merged['state']
 
     # Drop rows with NaN values created by feature engineering
     df_final = df_final.dropna()

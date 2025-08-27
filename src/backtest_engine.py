@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import sys
+from garch_engine import garch_volatility_forecast
+from scipy.stats import t
 
 def get_daily_closing_prices(futures_dir: Path, contract_symbol: str) -> pd.DataFrame:
     try:
@@ -35,15 +37,20 @@ def run_backtest():
 
     # --- Calculate P&L and New VaR-based Baseline Margin ---
     df_prices['returns'] = df_prices['price'].pct_change()
-    # 10-day, 99% VaR calculation
-    df_prices['var_99'] = df_prices['returns'].rolling(window=10).quantile(0.01)
+
+    # Calculate GARCH volatility and degrees of freedom
+    df_prices['garch_volatility'], dof = garch_volatility_forecast(df_prices['returns'], p=2, q=2, vol='EGARCH')
+
+    # Calculate parametric VaR using GARCH volatility and Student's t-distribution
+    df_prices['var_99_garch_t'] = df_prices['garch_volatility'] * t.ppf(0.01, df=dof)
+
     # The margin is the absolute VaR percentage multiplied by the current price
-    df_prices['baseline_margin'] = df_prices['var_99'].abs() * df_prices['price']
+    df_prices['baseline_margin'] = df_prices['var_99_garch_t'].abs() * df_prices['price']
     df_prices['pnl'] = df_prices['price'].diff().shift(-1)
 
     # --- Join and Clean ---
     # We only need the price, pnl, and the new baseline margin from the prices df
-    df_backtest = df_im.join(df_prices[['price', 'pnl', 'baseline_margin']], how='inner')
+    df_backtest = df_im.join(df_prices[['price', 'pnl', 'baseline_margin', 'garch_volatility']], how='inner')
     df_backtest.dropna(inplace=True)
 
     if df_backtest.empty:
@@ -56,6 +63,10 @@ def run_backtest():
     df_backtest['baseline_breach'] = (df_backtest['pnl'].abs() > df_backtest['baseline_margin']).astype(int)
     df_backtest['dynamic_breach'] = (df_backtest['pnl'].abs() > df_backtest['dynamic_margin']).astype(int)
 
+    # --- Save Backtest Results --- #
+    df_backtest.to_csv(RESULTS_DIR / "backtest_results.csv")
+    print("\nBacktest results saved to C:\\Users\\User\\Desktop\\Me\\Coding Projects\\CFA_Quant_Awards\\results_testing\\backtest_results.csv")
+
     # --- Reporting ---
     print("--- Backtesting Summary (99% Historical VaR Baseline) ---")
     print(f"Data points: {len(df_backtest)}")
@@ -67,6 +78,13 @@ def run_backtest():
     dynamic_breaches = df_backtest['dynamic_breach'].sum()
     print(f"  - Baseline Model (Hist. VaR): {baseline_breaches} ({baseline_breaches / len(df_backtest):.2%})")
     print(f"  - Dynamic Model:              {dynamic_breaches} ({dynamic_breaches / len(df_backtest):.2%})")
+    
+    baseline_breach_dates = df_backtest[df_backtest['baseline_breach'] == 1].index.strftime('%Y-%m-%d').tolist()
+    dynamic_breach_dates = df_backtest[df_backtest['dynamic_breach'] == 1].index.strftime('%Y-%m-%d').tolist()
+
+    print("\nBreach Dates:")
+    print(f"  - Baseline Model: {baseline_breach_dates}")
+    print(f"  - Dynamic Model:  {dynamic_breach_dates}")
     print("\n")
 
     print("Average Margin Size (% of Price):")
@@ -84,6 +102,21 @@ def run_backtest():
     print(f"  - Dynamic Model:              {pro_dynamic:.4f}")
     print(f"  - Change:                     {((pro_dynamic - pro_baseline) / pro_baseline):.2%}")
     print("----------------------------------------------------------")
+
+    print("\n--- Breach Analysis ---")
+    for breach_date_str in baseline_breach_dates:
+        breach_date = pd.to_datetime(breach_date_str)
+        start_date = breach_date - pd.Timedelta(days=3)
+        end_date = breach_date + pd.Timedelta(days=3)
+        print(f"\nData around baseline breach date: {breach_date_str}")
+        print(df_backtest.loc[start_date:end_date, ['price', 'pnl', 'baseline_margin', 'garch_volatility']])
+
+    for breach_date_str in dynamic_breach_dates:
+        breach_date = pd.to_datetime(breach_date_str)
+        start_date = breach_date - pd.Timedelta(days=3)
+        end_date = breach_date + pd.Timedelta(days=3)
+        print(f"\nData around dynamic breach date: {breach_date_str}")
+        print(df_backtest.loc[start_date:end_date, ['price', 'pnl', 'dynamic_margin', 'im_correction_factor']])
 
 if __name__ == "__main__":
     # Define paths at the top level for the script to run

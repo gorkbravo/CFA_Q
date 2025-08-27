@@ -46,7 +46,8 @@ def generate_timeseries_features(df: pd.DataFrame) -> pd.DataFrame:
         'rho',
         'implied_variance',
         'implied_skew',
-        'implied_kurtosis'
+        'implied_kurtosis',
+        'OVX_Close'
     ]
 
     # Generate features with smaller windows suitable for limited data

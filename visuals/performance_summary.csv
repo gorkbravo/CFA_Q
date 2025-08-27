@@ -1,0 +1,5 @@
+Metric,Baseline Model,Dynamic Model
+Breach Rate (%),0.73%,1.82%
+Number of Breaches,2,5
+Average Margin Size (% of Price),4.95%,4.70%
+Procyclicality,0.0053,0.0050

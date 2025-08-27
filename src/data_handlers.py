@@ -160,3 +160,32 @@ def get_option_chain(date: str | pd.Timestamp, expiry_symbol: str) -> pd.DataFra
         raise ValueError(f"Option chain data is not available for date {target_date} and expiry {expiry_symbol}.")
 
     return pd.DataFrame(chain_data).sort_values('strike').reset_index(drop=True)
+
+# --- OVX Data Handling --- #
+
+OVX_DIR = DATA_DIR / "OVX"
+
+_ovx_cache = None
+
+def _load_ovx_data() -> pd.DataFrame:
+    """Loads the OVX data from CSV, caching it after the first read."""
+    global _ovx_cache
+    if _ovx_cache is None:
+        ovx_file = next(OVX_DIR.glob("*.csv"))
+        df = pd.read_csv(ovx_file, header=1)
+        df.columns = [col.strip().lower() for col in df.columns]
+        df = df.rename(columns={"date time": "date", "close": "OVX_Close"})
+        df['date'] = pd.to_datetime(df['date'], errors='coerce')
+        df = df.dropna(subset=['date'])
+        df = df.set_index('date')
+        _ovx_cache = df[['OVX_Close']]
+    return _ovx_cache
+
+def get_ovx_data() -> pd.DataFrame:
+    """
+    Provides the OVX data.
+
+    Returns:
+        A DataFrame with the OVX closing prices.
+    """
+    return _load_ovx_data()
