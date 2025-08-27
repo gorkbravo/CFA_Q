@@ -90,30 +90,30 @@ For each daily observation the dataset is expanded with lag, moving‑average an
 
 Features are generated for \( \sigma_{\text{ATM}}, \rho, \text{Var}, \text{Skew}, \text{Kurt} \) and merged with \(F_t, r_t, T, \alpha, \nu\) and HMM outputs. Rows with missing values are removed, yielding the model‑ready dataset.
 
-### 2.5 Neural‑Network Forecasting
-The objective is to predict the next‑day change in ATM implied volatility. The target is the log ratio
+### 2.5 XGBoost-Based Gamma Forecasting
+The objective is to forecast the margin correction factor \(\phi_t\) that scales next‑day ATM volatility relative to today's level. Training targets are the ratio
 \[
-y_t = \ln\frac{\sigma_{\text{ATM},t+1}}{\sigma_{\text{ATM},t}}.
+\gamma_t = \frac{\sigma_{\text{ATM},t+1}}{\sigma_{\text{ATM},t}},
 \]
-A feed‑forward neural network (MLPRegressor) is tuned via grid search over activation \( \{\text{ReLU}, \tanh\} \), hidden‑layer sizes \([(50,25),(100,50),(50,25,10)]\) and L2 penalties \(\alpha \in \{10^{-4},10^{-3},10^{-2}\}\). TimeSeriesSplit with five folds preserves temporal order. The best model and accompanying standard‑scaler are saved.
+bounded to \([0.7,1.5]\). A gradient‑boosted tree model (XGBoost) is fitted with a custom loss that combines squared error with penalties for predictions outside \([0.7,1.3]\) and for large average margins. The feature set extends Section 2.4 with interaction terms, regime indicators and OVX‑based signals.
 
 ### 2.6 Correction Factor Generation
-The trained network produces predictions \( \hat{y}_t \). The implied margin correction factor is
+The trained booster outputs \( \hat{\gamma}_t \), clipped to \([0.7,1.5]\). The correction factor applied in margin calculations is
 \[
-\phi_t = e^{\hat{y}_t} = \frac{\widehat{\sigma}_{\text{ATM},t+1}}{\sigma_{\text{ATM},t}}.
+\phi_t = \hat{\gamma}_t,
 \]
-The factor is paired with contemporaneous \( \sigma_{\text{ATM},t} \) for downstream usage.
+which directly scales the baseline margin.
 
 ### 2.7 Backtesting Framework
-Let \( P_t \) denote the settlement price of the front‑month futures. Ten‑day 99\% historical Value‑at‑Risk is
+Let \( P_t \) denote the settlement price of the front‑month futures and \( r_t = \tfrac{P_t - P_{t-1}}{P_{t-1}} \) its return. An EGARCH(2,2) model with Student‑\(t\) innovations provides the one‑day volatility forecast \( \sigma_t \) and degrees of freedom \( \nu \). The 99\% parametric Value‑at‑Risk is
 \[
-\text{VaR}_{0.99,t} = \text{quantile}_{0.01}\left(\{r_{t-j}\}_{j=1}^{10}\right), \quad r_t = \frac{P_t - P_{t-1}}{P_{t-1}}.
+\text{VaR}_{0.99,t} = \sigma_t\, t_{\nu}^{-1}(0.01),
 \]
-The baseline margin is \( M^{\text{base}}_t = |\text{VaR}_{0.99,t}| P_t \). Applying the correction factor yields the dynamic margin
+yielding the baseline margin \( M^{\text{base}}_t = |\text{VaR}_{0.99,t}| P_t \). Applying the correction factor gives
 \[
 M^{\text{dyn}}_t = M^{\text{base}}_t \phi_t.
 \]
-Out‑of‑sample performance is evaluated through margin breaches \( |\Delta P_t| > M_t \), average margin levels and procyclicality—defined as the standard deviation of daily margin‑to‑price changes.
+Performance is assessed via margin breaches, average margin levels and procyclicality, defined as the standard deviation of daily margin‑to‑price changes.
 
 ---
 This methodology enables a forward‑looking initial margin that adapts to projected changes in implied volatility while respecting term‑structure dynamics and regime shifts.
