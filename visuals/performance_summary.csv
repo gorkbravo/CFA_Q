@@ -3,3 +3,5 @@ Breach Rate (%),0.73%,1.82%
 Number of Breaches,2,5
 Average Margin Size (% of Price),4.95%,4.70%
 Procyclicality,0.0053,0.0050
+Kupiec UC p-value,0.6328,0.2211
+Christoffersen Ind p-value,1.0000,1.0000
