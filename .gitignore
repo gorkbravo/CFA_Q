@@ -14,3 +14,9 @@ temp_*.py
 
 # Data directories (often large and not version controlled)
 Data/
+
+# Keep processed dataset only; ignore raw data
+data/*
+!data/
+!data/processed/
+!data/processed/model_ready_dataset.csv
