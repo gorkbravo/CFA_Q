@@ -8,11 +8,11 @@ from __future__ import annotations
 from pathlib import Path
 import pandas as pd
 
-# --- Constants and Caching --- #
+# --- Constants and Caching ---
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT_DIR / "Data_act"
-SOFR_FILE = DATA_DIR / "SORF" / "SOFR.csv"
+from src.config import RAW_DATA_DIR, FUTURES_DIR
+
+SOFR_FILE = RAW_DATA_DIR / "SORF" / "SOFR.csv"
 
 _sofr_cache = None
 
@@ -49,9 +49,9 @@ def get_risk_free_rate(date: str | pd.Timestamp) -> float:
         
     return rate
 
-# --- Futures Data Handling --- #
+# --- Futures Data Handling ---
 
-FUTURES_DIR = DATA_DIR / "Futures_curve_time_series"
+
 
 _futures_contracts_cache = None
 
@@ -98,9 +98,30 @@ def get_futures_curve(date: str | pd.Timestamp) -> pd.DataFrame:
         
     return pd.DataFrame(curve_data)
 
-# --- Options Data Handling --- #
+def get_daily_closing_prices(contract_symbol: str) -> pd.DataFrame:
 
-OPTIONS_DIR = DATA_DIR / "Options_time_series"
+    try:
+        contract_file = next(FUTURES_DIR.glob(f"{contract_symbol}*.csv"))
+    except StopIteration:
+        print(f"Error: Futures contract file for {contract_symbol} not found.")
+        return pd.DataFrame(columns=['price']).set_index(pd.to_datetime([]))
+
+    df = pd.read_csv(contract_file, header=1)
+    df.columns = [col.strip().lower() for col in df.columns]
+    df.rename(columns={'date time': 'date'}, inplace=True)
+    df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    df.dropna(subset=['date'], inplace=True)
+    df = df.set_index('date')
+
+    if 'close' in df.columns:
+        return df[['close']].rename(columns={'close': 'price'})
+    else:
+        print(f"Error: 'close' column not found in {contract_file.name}.")
+        return pd.DataFrame(columns=['price']).set_index(pd.to_datetime([]))
+
+# --- Options Data Handling ---
+
+OPTIONS_DIR = RAW_DATA_DIR / "Options_time_series"
 
 def get_option_chain(date: str | pd.Timestamp, expiry_symbol: str) -> pd.DataFrame:
     """
@@ -161,9 +182,9 @@ def get_option_chain(date: str | pd.Timestamp, expiry_symbol: str) -> pd.DataFra
 
     return pd.DataFrame(chain_data).sort_values('strike').reset_index(drop=True)
 
-# --- OVX Data Handling --- #
+# --- OVX Data Handling ---
 
-OVX_DIR = DATA_DIR / "OVX"
+OVX_DIR = RAW_DATA_DIR / "OVX"
 
 _ovx_cache = None
 

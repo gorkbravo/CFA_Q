@@ -1,9 +1,18 @@
 import pandas as pd
 import numpy as np
 from pathlib import Path
-import sys
-from garch_engine import garch_volatility_forecast
 from scipy.stats import t, chi2
+
+from src.config import (
+    TABLES_DIR,
+    FUTURES_CONTRACT_SYMBOL,
+    CONFIDENCE_LEVELS,
+    GARCH_P,
+    GARCH_Q,
+    GARCH_VOL,
+)
+from src.data_handlers import get_daily_closing_prices
+from src.garch_engine import garch_volatility_forecast
 
 def kupiec_uc_test(n_breaches, n_obs, confidence_level):
     """Kupiec's Unconditional Coverage (UC) test."""
@@ -56,33 +65,14 @@ def christoffersen_ind_test(breaches):
     p_value = 1 - chi2.cdf(lr_ind, df=1)
     return p_value
 
-def get_daily_closing_prices(futures_dir: Path, contract_symbol: str) -> pd.DataFrame:
 
-    try:
-        contract_file = next(futures_dir.glob(f"{contract_symbol}*.csv"))
-    except StopIteration:
-        print(f"Error: Futures contract file for {contract_symbol} not found.")
-        return pd.DataFrame(columns=['price']).set_index(pd.to_datetime([]))
-
-    df = pd.read_csv(contract_file, header=1)
-    df.columns = [col.strip().lower() for col in df.columns]
-    df.rename(columns={'date time': 'date'}, inplace=True)
-    df['date'] = pd.to_datetime(df['date'], errors='coerce')
-    df.dropna(subset=['date'], inplace=True)
-    df = df.set_index('date')
-
-    if 'close' in df.columns:
-        return df[['close']].rename(columns={'close': 'price'})
-    else:
-        print(f"Error: 'close' column not found in {contract_file.name}.")
-        return pd.DataFrame(columns=['price']).set_index(pd.to_datetime([]))
 
 def run_backtest():
     # --- Load Data ---
-    df_im = pd.read_csv(RESULTS_DIR / "im_correction_factor.csv", parse_dates=['date'])
+    df_im = pd.read_csv(TABLES_DIR / "im_correction_factor.csv", parse_dates=['date'])
     df_im.set_index('date', inplace=True)
 
-    df_prices = get_daily_closing_prices(FUTURES_DIR, 'CLV25')
+    df_prices = get_daily_closing_prices(FUTURES_CONTRACT_SYMBOL)
     if df_prices.empty:
         print("Could not load futures prices. Aborting backtest.")
         return
@@ -91,11 +81,10 @@ def run_backtest():
     df_prices['returns'] = df_prices['price'].pct_change()
 
     # Calculate GARCH volatility and degrees of freedom
-    df_prices['garch_volatility'], dof = garch_volatility_forecast(df_prices['returns'], p=2, q=2, vol='EGARCH')
+    df_prices['garch_volatility'], dof = garch_volatility_forecast(df_prices['returns'], p=GARCH_P, q=GARCH_Q, vol=GARCH_VOL)
 
     # Calculate parametric VaR using GARCH volatility and Student's t-distribution for multiple confidence levels
-    confidence_levels = [0.95, 0.99, 0.995]
-    for cl in confidence_levels:
+    for cl in CONFIDENCE_LEVELS:
         df_prices[f'var_{int(cl*1000)}_garch_t'] = df_prices['garch_volatility'] * t.ppf(1 - cl, df=dof)
         df_prices[f'margin_{int(cl*1000)}'] = df_prices[f'var_{int(cl*1000)}_garch_t'].abs() * df_prices['price']
 
@@ -106,7 +95,13 @@ def run_backtest():
 
     # --- Join and Clean ---
     # We only need the price, pnl, and the new baseline margin from the prices df
-    df_backtest = df_im.join(df_prices[['price', 'pnl', 'baseline_margin', 'garch_volatility'] + [f'margin_{int(cl*1000)}' for cl in confidence_levels]], how='inner')
+    df_backtest = df_im.join(
+        df_prices[
+            ['price', 'pnl', 'baseline_margin', 'garch_volatility']
+            + [f'margin_{int(cl*1000)}' for cl in CONFIDENCE_LEVELS]
+        ],
+        how='inner',
+    )
     df_backtest.dropna(inplace=True)
 
     if df_backtest.empty:
@@ -118,7 +113,7 @@ def run_backtest():
     df_backtest['dynamic_margin'] = df_backtest['baseline_margin'] * df_backtest['im_correction_factor']
     
     # Calculate breaches for all confidence levels
-    for cl in confidence_levels:
+    for cl in CONFIDENCE_LEVELS:
         df_backtest[f'baseline_breach_{int(cl*1000)}'] = (df_backtest['pnl'].abs() > df_backtest[f'margin_{int(cl*1000)}']).astype(int)
     
     df_backtest['baseline_breach'] = df_backtest['baseline_breach_990'] # Default for reporting
@@ -131,7 +126,7 @@ def run_backtest():
     # Run formal tests
     n_obs = len(df_backtest)
     formal_test_results = {}
-    for cl in confidence_levels:
+    for cl in CONFIDENCE_LEVELS:
         n_breaches_baseline = df_backtest[f'baseline_breach_{int(cl*1000)}'].sum()
         n_breaches_dynamic = df_backtest['dynamic_breach'].sum() # Dynamic model always uses 99% baseline for correction
 
@@ -155,12 +150,12 @@ def run_backtest():
     df_formal_tests.index = pd.MultiIndex.from_tuples(df_formal_tests.index, names=['Model_CL', 'Test'])
     
     # --- Save Backtest Results ---
-    df_backtest.to_csv(RESULTS_DIR / "backtest_results.csv")
-    print(r"Backtest results saved to C:\Users\User\Desktop\Me\Coding Projects\CFA_Quant_Awards\results_testing\backtest_results.csv")
+    df_backtest.to_csv(TABLES_DIR / "backtest_results.csv")
+    print(f"Backtest results saved to {TABLES_DIR / 'backtest_results.csv'}")
     
     # Save formal test results
-    df_formal_tests.to_csv(RESULTS_DIR / "formal_test_results.csv")
-    print(r"Formal test results saved to C:\Users\User\Desktop\Me\Coding Projects\CFA_Quant_Awards\results_testing\formal_test_results.csv")
+    df_formal_tests.to_csv(TABLES_DIR / "formal_test_results.csv")
+    print(f"Formal test results saved to {TABLES_DIR / 'formal_test_results.csv'}")
 
     # --- Reporting ---
     print("--- Backtesting Summary (99% Historical VaR Baseline) ---")
@@ -198,6 +193,8 @@ def run_backtest():
     print(f"  - Change:                     {((pro_dynamic - pro_baseline) / pro_baseline):.2%}")
     print("----------------------------------------------------------")
 
+    return df_backtest['dynamic_breach'].sum(), (df_backtest['dynamic_margin'] / df_backtest['price']).mean(), (df_backtest['dynamic_margin'] / df_backtest['price']).diff().std()
+
     print("\n--- Breach Analysis ---")
     for breach_date_str in baseline_breach_dates:
         breach_date = pd.to_datetime(breach_date_str)
@@ -212,11 +209,3 @@ def run_backtest():
         end_date = breach_date + pd.Timedelta(days=3)
         print(f"\nData around dynamic breach date: {breach_date_str}")
         print(df_backtest.loc[start_date:end_date, ['price', 'pnl', 'dynamic_margin', 'im_correction_factor']])
-
-if __name__ == "__main__":
-    # Define paths at the top level for the script to run
-    ROOT_DIR = Path(__file__).resolve().parents[1]
-    DATA_DIR = ROOT_DIR / "Data_act"
-    RESULTS_DIR = ROOT_DIR / "results_testing"
-    FUTURES_DIR = DATA_DIR / "Futures_curve_time_series"
-    run_backtest()

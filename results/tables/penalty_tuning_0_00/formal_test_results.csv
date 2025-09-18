@@ -1,0 +1,9 @@
+Model_CL,Test,0
+baseline_950,UC_p_value,0.1685916182943089
+baseline_950,Ind_p_value,1.0
+baseline_990,UC_p_value,0.6328249980153042
+baseline_990,Ind_p_value,1.0
+dynamic_990,UC_p_value,0.478055628104575
+dynamic_990,Ind_p_value,1.0
+baseline_995,UC_p_value,0.6169325422316323
+baseline_995,Ind_p_value,1.0

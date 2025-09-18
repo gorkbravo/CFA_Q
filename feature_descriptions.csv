@@ -1,0 +1,34 @@
+feature,description
+F,The futures price.
+tau,Time to expiration of the futures contract (in years).
+r,The risk-free interest rate.
+atm_iv,At-the-money implied volatility.
+rho,The rho of the options, which measures the sensitivity to the interest rate.
+nu,A parameter from the SVI volatility model.
+iv_rmse,The root mean squared error of the SVI model fit.
+implied_variance,The implied variance from the SVI model.
+implied_skew,The implied skewness from the SVI model.
+implied_kurtosis,The implied kurtosis from the SVI model.
+OVX_Close,The closing price of the CBOE Crude Oil Volatility Index (OVX).
+*_lag_1,The value of the feature from the previous day.
+*_ma_2,A 2-day moving average of the feature.
+*_mom_1,The 1-day momentum (change) of the feature.
+vol_regime_high,An indicator for a high volatility regime.
+vol_regime_low,An indicator for a low volatility regime.
+skew_kurt_interaction,The product of implied skew and implied kurtosis.
+vol_momentum,The product of atm_iv_mom_1 and implied_variance_mom_1.
+term_structure_interaction,The product of tau and F.
+rho_vol_interaction,The product of rho and atm_iv.
+iv_vol_ratio,The ratio of atm_iv to its 10-day standard deviation.
+skew_level,The absolute value of the implied skew.
+month1_spread,The spread between the first and second month futures contracts.
+month3_spread,The spread between the third and fourth month futures contracts.
+year1_spread,The spread between the first and twelfth month futures contracts.
+norm_month1,The normalized price of the first month futures contract.
+norm_month3,The normalized price of the third month futures contract.
+norm_year1,The normalized price of the twelfth month futures contract.
+persistence,A measure of the persistence of the volatility.
+persistence_impact,The impact of the persistence on the volatility.
+hmm_regime,The regime from a Hidden Markov Model.
+market_state,The state of the market (e.g., backwardation, contango).
+target,The target variable for the Random Forest model in analyze_features.py.

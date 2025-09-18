@@ -1,31 +1,22 @@
-
 """
 SVI_SABR_engine.py
 =========================
 Main engine to iterate through a date range, assemble market data using handlers,
-and calibrate the SVI-SABR model for each day.
+and calibrate the SVI-SABR model for each day. 
 """
 
 from __future__ import annotations
-import argparse
-from pathlib import Path
-import pandas as pd
-import numpy as np
 import math
-from datetime import datetime
+import numpy as np
 import scipy.optimize as spo
-from scipy.integrate import trapezoid
 from scipy.stats import norm
-
-# Import our new data handlers and calculation modules
-import data_handlers
-import futures_curve as fcm
+from scipy.integrate import trapezoid
+import pandas as pd
+from src.config import ROOT_DIR, TABLES_DIR, FUTURES_CONTRACT_SYMBOL
+from src import data_handlers
+from src import futures_curve as fcm
 
 # --- Constants --- #
-ROOT_DIR = Path(__file__).resolve().parents[1]
-RESULTS_DIR = ROOT_DIR / "results_testing"
-RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-
 PARAM_BOUNDS_SVI = [(1e-5, 10.0), (1e-5, 10.0), (-0.999, 0.999)]
 ARB_CAP = 4.0
 EXTRAPOLATION_FACTOR = 4.0
@@ -34,6 +25,7 @@ EXT_GRID_SIZE = 500
 # --- Core SVI and Black-76 Calculations (preserved from old engine) --- #
 
 def call_price_black76(F: float, K: float, sigma: float, T: float, r: float) -> float:
+    """Calculate call price using Black-76 formula."""
     if sigma <= 0 or T <= 0:
         return max(F - K, 0.0)
     d1 = (math.log(F / K) + 0.5 * sigma**2 * T) / (sigma * math.sqrt(T))
@@ -41,6 +33,7 @@ def call_price_black76(F: float, K: float, sigma: float, T: float, r: float) -> 
     return math.exp(-r * T) * (norm.cdf(d1) * F - norm.cdf(d2) * K)
 
 def implied_volatility_black76(price: float, F: float, K: float, T: float, r: float) -> float:
+    """Calculate implied volatility using Black-76 formula."""
     def objective(sigma):
         return call_price_black76(F, K, sigma, T, r) - price
     try:
@@ -49,13 +42,18 @@ def implied_volatility_black76(price: float, F: float, K: float, T: float, r: fl
         return np.nan
 
 def svi_sabr_vol(F: float, K: float, T: float, alpha: float, nu: float, rho: float) -> float:
+    """Calculate SVI-SABR volatility."""
     k = math.log(K / F)
     term1 = 1 + rho * (nu / alpha) * k
     term2 = math.sqrt((nu / alpha * k + rho)**2 + (1 - rho**2))
     w = 0.5 * alpha**2 * (term1 + term2)
     return math.sqrt(w / T)
 
-def calibrate_svi_sabr(df: pd.DataFrame, F: float, T: float, r: float, initial_guess: list) -> dict:
+def calibrate_svi_sabr(df: pd.DataFrame, F: float, T: float, r: float, initial_guess: list) -> dict | None:
+    """Calibrate SVI-SABR model for a given day's option chain.
+
+    Note: This function estimates parameters by fitting model IVs to observed IVs on calls only.
+    """
     df_calls = df[df['type'] == 'c'].copy()
     df_calls['iv'] = df_calls.apply(lambda row: implied_volatility_black76(row['price'], F, row['strike'], T, r), axis=1)
     df_calls = df_calls.dropna(subset=['iv'])
@@ -69,7 +67,7 @@ def calibrate_svi_sabr(df: pd.DataFrame, F: float, T: float, r: float, initial_g
     weights = (weights / weights.sum()) if weights.sum() > 0 else (np.ones_like(weights) / len(weights))
 
     def obj(x):
-        sim = np.array([svi_sabr_vol(F, K, T, *x) for K in strikes])
+        sim = np.array([svi_sabr_vol(F, K_i, T, *x) for K_i in strikes])
         penalty = 1e6 if not (x[0] * x[1] * T * (1 + abs(x[2])) < ARB_CAP) else 0
         return float(np.sum(weights * (sim - ivs)**2)) + penalty
 
@@ -80,6 +78,7 @@ def calibrate_svi_sabr(df: pd.DataFrame, F: float, T: float, r: float, initial_g
     return {'alpha': alpha, 'nu': nu, 'rho': rho, 'iv_rmse': iv_rmse, 'warn_code': warn}
 
 def calculate_implied_moments(F: float, T: float, r: float, alpha: float, nu: float, rho: float) -> dict:
+    """Calculate implied moments."""
     try:
         K_grid = np.linspace(F / EXTRAPOLATION_FACTOR, F * EXTRAPOLATION_FACTOR, EXT_GRID_SIZE * 2)
         k_grid = np.log(K_grid / F)
@@ -100,18 +99,15 @@ def calculate_implied_moments(F: float, T: float, r: float, alpha: float, nu: fl
 
 # --- Main Processing Loop --- #
 
-def process_daily_data(start_date: str, end_date: str, expiry_symbol: str, expiry_date_str: str):
+def run_svi_engine(start_date: str, end_date: str, expiry_symbol: str, expiry_date_str: str) -> None:
     """
     Main loop to process market data for each day in a date range.
     """
+    output_path = TABLES_DIR / "daily_svi_analysis.csv"
     date_range = pd.to_datetime(pd.date_range(start=start_date, end=end_date, freq='B'))
     expiry_date = pd.to_datetime(expiry_date_str)
     all_results = []
-    last_params = [0.2, 0.5, -0.3] # Initial guess for SVI parameters
-
-    # Get the full futures curve for the expiry to determine the underlying contract
-    # This is a simplification; a more robust method would map option expiry to futures contract
-    underlying_contract_symbol = 'CLV25' # Hardcoded for now based on user info
+    last_params = [0.2, 0.5, -0.3]  # Initial guess for SVI parameters
 
     for date in date_range:
         print(f"Processing {date.strftime('%Y-%m-%d')}...")
@@ -120,7 +116,7 @@ def process_daily_data(start_date: str, end_date: str, expiry_symbol: str, expir
             r = data_handlers.get_risk_free_rate(date)
             option_chain = data_handlers.get_option_chain(date, expiry_symbol)
             futures_contracts = data_handlers._load_futures_contracts()
-            F = futures_contracts[underlying_contract_symbol]['close'].asof(date)
+            F = futures_contracts[FUTURES_CONTRACT_SYMBOL]['close'].asof(date)
             T = (expiry_date - date).days / 365.0
 
             if T <= 0 or pd.isna(F):
@@ -153,21 +149,6 @@ def process_daily_data(start_date: str, end_date: str, expiry_symbol: str, expir
 
     # 5. Save final DataFrame
     results_df = pd.DataFrame(all_results)
-    output_path = RESULTS_DIR / "daily_svi_analysis.csv"
     results_df.to_csv(output_path, index=False)
     print(f"\nSuccessfully processed {len(results_df)} days.")
     print(f"Results saved to {output_path}")
-
-# --- CLI --- #
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Run SVI-SABR calibration over a date range.")
-    parser.add_argument("--start", required=True, help="Start date in YYYY-MM-DD format")
-    parser.add_argument("--end", required=True, help="End date in YYYY-MM-DD format")
-    args = parser.parse_args()
-
-    # Based on user info, the expiry is fixed for this dataset
-    EXPIRY_SYMBOL = 'clv5'
-    EXPIRY_DATE = '2025-09-17'
-
-    process_daily_data(args.start, args.end, EXPIRY_SYMBOL, EXPIRY_DATE)

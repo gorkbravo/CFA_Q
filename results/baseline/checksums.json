@@ -1,0 +1,18 @@
+{
+  "results\\tables\\im_correction_factor.csv": {
+    "sha256": "7af0169c3fe0c6c56b95e793c0eab6025421ed1c5d23594b5277baa1d6c500a8",
+    "size": 16561
+  },
+  "results\\tables\\backtest_results.csv": {
+    "sha256": "1415e13696b106877674f27625ec2f8969e344193412add0815a554ef7bb537c",
+    "size": 59771
+  },
+  "results\\tables\\formal_test_results.csv": {
+    "sha256": "e9d0b7b7a0ed8f58684e29da39e49c2f3d51983b53dadf93b98776dd78d310e0",
+    "size": 312
+  },
+  "results\\tables\\feature_importance.csv": {
+    "sha256": "326b3890a329b4ddeadc60704da1a490dfe4acd45b72cf4cccfaab245836e717",
+    "size": 588
+  }
+}

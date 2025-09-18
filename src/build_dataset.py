@@ -1,36 +1,22 @@
 import pandas as pd
 from pathlib import Path
-import subprocess
 import re
 
 # Import our modules
-import data_handlers
-import futures_curve as fcm
-import hmm_engine
-import feature_engine
+from src.config import ROOT_DIR, TABLES_DIR, MODEL_READY_DATASET_PATH, START_DATE, END_DATE, EXPIRY_SYMBOL, EXPIRY_DATE
+from src import data_handlers
+from src import futures_curve as fcm
+from src import hmm_engine
+from src import feature_engine
+from src import SVI_SABR_engine
 
-# --- Configuration --- #
-ROOT_DIR = Path(__file__).resolve().parents[1]
-RESULTS_DIR = ROOT_DIR / "results_testing"
-FINAL_DATA_DIR = ROOT_DIR / "Data_act" / "Final"
-FINAL_DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-SVI_OUTPUT_PATH = RESULTS_DIR / "daily_svi_analysis.csv"
-FINAL_DATASET_PATH = FINAL_DATA_DIR / "model_ready_dataset.csv"
-
-# Define the date range for the entire process
-START_DATE = '2023-02-07'
-END_DATE = '2025-08-22'
+SVI_OUTPUT_PATH = TABLES_DIR / "daily_svi_analysis.csv"
+FINAL_DATASET_PATH = MODEL_READY_DATASET_PATH
 
 def main():
     # --- Step 1: Run SVI Engine --- #
     print("--- Running SVI Engine ---")
-    svi_engine_path = str(ROOT_DIR / "src" / "SVI_SABR_engine.py")
-    subprocess.run([
-        "python", svi_engine_path, 
-        "--start", START_DATE, 
-        "--end", END_DATE
-    ], check=True)
+    SVI_SABR_engine.run_svi_engine(START_DATE, END_DATE, EXPIRY_SYMBOL, EXPIRY_DATE)
     df_svi = pd.read_csv(SVI_OUTPUT_PATH, parse_dates=['date'], index_col='date')
     print(f"SVI Engine finished. Shape: {df_svi.shape}")
 
@@ -87,5 +73,3 @@ def main():
     df_final.to_csv(FINAL_DATASET_PATH)
     print(f"\nModel-ready dataset saved to {FINAL_DATASET_PATH}")
 
-if __name__ == '__main__':
-    main()
